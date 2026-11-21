@@ -10,9 +10,13 @@ import {
   Trash2, 
   Sparkles,
   ArrowRight,
-  ArrowLeft
+  ArrowLeft,
+  Database,
+  CloudOff,
+  Loader2
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import { createUserLead, updateUserLead, deleteUserLead } from '../services/supabase';
 
 const STAGES = [
   { id: 'lead', title: '01. Identified Prospect', color: 'border-gray-500' },
@@ -22,56 +26,99 @@ const STAGES = [
   { id: 'won', title: '05. Closed Won! 🎉', color: 'border-brand-accent' },
 ];
 
-export default function LeadPipeline({ leads, setLeads }) {
+export default function LeadPipeline({ 
+  leads, 
+  setLeads, 
+  user, 
+  isSupabaseConfigured,
+  onOpenAuth,
+  isLoadingLeads 
+}) {
   const [showAddModal, setShowAddModal] = useState(false);
   const [newCompany, setNewCompany] = useState('');
   const [newContact, setNewContact] = useState('');
   const [newValue, setNewValue] = useState(2500);
   const [newNiche, setNewNiche] = useState('Dental Clinic');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const addLead = (e) => {
+  const addLead = async (e) => {
     e.preventDefault();
     if (!newCompany.trim()) return;
 
-    const newDeal = {
-      id: Date.now().toString(),
-      company: newCompany,
-      contact: newContact || 'Decision Maker',
+    setIsSubmitting(true);
+    const leadPayload = {
+      company: newCompany.trim(),
+      contact: newContact.trim() || 'Decision Maker',
       value: Number(newValue) || 2500,
       niche: newNiche,
-      status: 'lead',
-      date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+      status: 'lead'
     };
 
-    setLeads([newDeal, ...leads]);
+    // If authenticated to Supabase, save to real PostgreSQL table
+    if (user && isSupabaseConfigured) {
+      try {
+        const savedLead = await createUserLead(leadPayload);
+        if (savedLead) {
+          setLeads([savedLead, ...leads]);
+        }
+      } catch (err) {
+        console.error('Failed to save to Supabase:', err);
+        // Fallback to local
+        const localLead = { ...leadPayload, id: Date.now().toString(), date: 'Just now' };
+        setLeads([localLead, ...leads]);
+      }
+    } else {
+      // Offline local mode
+      const localLead = { ...leadPayload, id: Date.now().toString(), date: 'Just now' };
+      setLeads([localLead, ...leads]);
+    }
+
+    setIsSubmitting(false);
     setNewCompany('');
     setNewContact('');
     setShowAddModal(false);
   };
 
-  const moveStage = (id, direction) => {
-    setLeads(leads.map(lead => {
-      if (lead.id === id) {
-        const currentIndex = STAGES.findIndex(s => s.id === lead.status);
-        const nextIndex = direction === 'next' ? currentIndex + 1 : currentIndex - 1;
-        if (nextIndex >= 0 && nextIndex < STAGES.length) {
-          const nextStatus = STAGES[nextIndex].id;
-          if (nextStatus === 'won') {
-            confetti({
-              particleCount: 150,
-              spread: 80,
-              origin: { y: 0.6 }
-            });
-          }
-          return { ...lead, status: nextStatus };
-        }
+  const moveStage = async (id, direction) => {
+    const targetLead = leads.find(l => l.id === id);
+    if (!targetLead) return;
+
+    const currentIndex = STAGES.findIndex(s => s.id === targetLead.status);
+    const nextIndex = direction === 'next' ? currentIndex + 1 : currentIndex - 1;
+    if (nextIndex < 0 || nextIndex >= STAGES.length) return;
+
+    const nextStatus = STAGES[nextIndex].id;
+
+    if (nextStatus === 'won') {
+      confetti({
+        particleCount: 150,
+        spread: 80,
+        origin: { y: 0.6 }
+      });
+    }
+
+    // Optimistic UI update
+    setLeads(leads.map(lead => lead.id === id ? { ...lead, status: nextStatus } : lead));
+
+    // Update Supabase if authenticated
+    if (user && isSupabaseConfigured) {
+      try {
+        await updateUserLead(id, { status: nextStatus });
+      } catch (err) {
+        console.error('Failed to update lead status in Supabase:', err);
       }
-      return lead;
-    }));
+    }
   };
 
-  const deleteLead = (id) => {
+  const deleteLead = async (id) => {
     setLeads(leads.filter(l => l.id !== id));
+    if (user && isSupabaseConfigured) {
+      try {
+        await deleteUserLead(id);
+      } catch (err) {
+        console.error('Failed to delete lead from Supabase:', err);
+      }
+    }
   };
 
   return (
@@ -82,14 +129,28 @@ export default function LeadPipeline({ leads, setLeads }) {
         <div>
           <div className="inline-flex items-center space-x-2 text-xs font-bold text-brand-accent uppercase tracking-wider mb-1">
             <Kanban className="w-4 h-4" />
-            <span>High-Ticket Deal Pipeline</span>
+            <span>Multi-Tenant Deal Pipeline</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-white">
             Client Acquisition CRM
           </h1>
-          <p className="text-xs sm:text-sm text-gray-400 mt-1">
-            Track every prospect from cold outreach to closed retainer contract.
-          </p>
+          <div className="flex items-center space-x-2 mt-1 text-xs">
+            {user && isSupabaseConfigured ? (
+              <span className="flex items-center text-brand-accent font-semibold">
+                <Database className="w-3.5 h-3.5 mr-1" />
+                <span>Connected to PostgreSQL Database (RLS Active)</span>
+              </span>
+            ) : (
+              <span className="flex items-center text-amber-400 font-semibold">
+                <CloudOff className="w-3.5 h-3.5 mr-1" />
+                <span>Local Browser Storage •{' '}
+                  <button onClick={onOpenAuth} className="underline text-brand-accent ml-1 font-bold">
+                    Sign in to sync with cloud
+                  </button>
+                </span>
+              </span>
+            )}
+          </div>
         </div>
 
         <button
@@ -101,91 +162,101 @@ export default function LeadPipeline({ leads, setLeads }) {
         </button>
       </div>
 
-      {/* Kanban Board Columns */}
-      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 overflow-x-auto pb-6">
-        {STAGES.map((stage) => {
-          const stageLeads = leads.filter(l => l.status === stage.id);
-          const stageTotal = stageLeads.reduce((sum, l) => sum + (l.value || 0), 0);
+      {isLoadingLeads ? (
+        <div className="h-64 flex items-center justify-center space-x-2 text-gray-400 text-xs">
+          <Loader2 className="w-5 h-5 animate-spin text-brand-accent" />
+          <span>Loading pipeline from PostgreSQL...</span>
+        </div>
+      ) : (
+        /* Kanban Board Columns */
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 overflow-x-auto pb-6">
+          {STAGES.map((stage) => {
+            const stageLeads = leads.filter(l => l.status === stage.id);
+            const stageTotal = stageLeads.reduce((sum, l) => sum + (Number(l.value) || 0), 0);
 
-          return (
-            <div key={stage.id} className="bg-dark-800/80 border border-dark-600 rounded-xl p-3 flex flex-col min-w-[240px]">
-              {/* Column Header */}
-              <div className="pb-3 border-b border-dark-600 mb-3">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-bold text-gray-200">{stage.title}</h3>
-                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-dark-700 text-gray-300">
-                    {stageLeads.length}
-                  </span>
-                </div>
-                <div className="text-[11px] font-extrabold text-brand-accent mt-1">
-                  ${stageTotal.toLocaleString()}
-                </div>
-              </div>
-
-              {/* Cards List */}
-              <div className="space-y-3 flex-1 overflow-y-auto max-h-[600px] pr-1">
-                {stageLeads.length === 0 ? (
-                  <div className="p-4 rounded-lg border border-dashed border-dark-600 text-center text-[11px] text-gray-500 italic">
-                    No active deals in this stage
+            return (
+              <div key={stage.id} className="bg-dark-800/80 border border-dark-600 rounded-xl p-3 flex flex-col min-w-[240px]">
+                {/* Column Header */}
+                <div className="pb-3 border-b border-dark-600 mb-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xs font-bold text-gray-200">{stage.title}</h3>
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-dark-700 text-gray-300">
+                      {stageLeads.length}
+                    </span>
                   </div>
-                ) : (
-                  stageLeads.map((lead) => (
-                    <div
-                      key={lead.id}
-                      className="bg-dark-900 border border-dark-600 hover:border-brand-500/40 rounded-xl p-3.5 transition-all shadow-sm space-y-2 group"
-                    >
-                      <div className="flex items-start justify-between">
-                        <span className="text-[10px] font-bold text-brand-400 bg-brand-500/10 px-2 py-0.5 rounded">
-                          {lead.niche}
-                        </span>
-                        <button
-                          onClick={() => deleteLead(lead.id)}
-                          className="text-gray-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+                  <div className="text-[11px] font-extrabold text-brand-accent mt-1">
+                    ${stageTotal.toLocaleString()}
+                  </div>
+                </div>
 
-                      <h4 className="font-bold text-sm text-white">{lead.company}</h4>
-                      <p className="text-xs text-gray-400">Contact: {lead.contact}</p>
-
-                      <div className="pt-2 border-t border-dark-700/60 flex items-center justify-between text-xs">
-                        <span className="font-extrabold text-brand-accent">
-                          ${lead.value.toLocaleString()}
-                        </span>
-                        <span className="text-[10px] text-gray-500">{lead.date}</span>
-                      </div>
-
-                      {/* Move Buttons */}
-                      <div className="pt-2 flex justify-between gap-1">
-                        {stage.id !== 'lead' && (
-                          <button
-                            onClick={() => moveStage(lead.id, 'prev')}
-                            className="p-1 rounded bg-dark-700 text-gray-400 hover:text-white text-[10px] flex items-center"
-                            title="Move back"
-                          >
-                            <ArrowLeft className="w-3 h-3" />
-                          </button>
-                        )}
-                        {stage.id !== 'won' && (
-                          <button
-                            onClick={() => moveStage(lead.id, 'next')}
-                            className="p-1 px-2.5 rounded bg-brand-500/20 text-brand-accent hover:bg-brand-500 hover:text-black font-bold text-[10px] flex items-center space-x-1 ml-auto"
-                          >
-                            <span>Advance</span>
-                            <ArrowRight className="w-3 h-3" />
-                          </button>
-                        )}
-                      </div>
+                {/* Cards List */}
+                <div className="space-y-3 flex-1 overflow-y-auto max-h-[600px] pr-1">
+                  {stageLeads.length === 0 ? (
+                    <div className="p-4 rounded-lg border border-dashed border-dark-600 text-center text-[11px] text-gray-500 italic">
+                      No active deals in this stage
                     </div>
-                  ))
-                )}
-              </div>
+                  ) : (
+                    stageLeads.map((lead) => (
+                      <div
+                        key={lead.id}
+                        className="bg-dark-900 border border-dark-600 hover:border-brand-500/40 rounded-xl p-3.5 transition-all shadow-sm space-y-2 group"
+                      >
+                        <div className="flex items-start justify-between">
+                          <span className="text-[10px] font-bold text-brand-400 bg-brand-500/10 px-2 py-0.5 rounded">
+                            {lead.niche}
+                          </span>
+                          <button
+                            onClick={() => deleteLead(lead.id)}
+                            className="text-gray-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                            title="Delete lead"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
 
-            </div>
-          );
-        })}
-      </div>
+                        <h4 className="font-bold text-sm text-white">{lead.company}</h4>
+                        <p className="text-xs text-gray-400">Contact: {lead.contact || 'Decision Maker'}</p>
+
+                        <div className="pt-2 border-t border-dark-700/60 flex items-center justify-between text-xs">
+                          <span className="font-extrabold text-brand-accent">
+                            ${(Number(lead.value) || 0).toLocaleString()}
+                          </span>
+                          <span className="text-[10px] text-gray-500">
+                            {lead.created_at ? new Date(lead.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : (lead.date || 'Active')}
+                          </span>
+                        </div>
+
+                        {/* Move Buttons */}
+                        <div className="pt-2 flex justify-between gap-1">
+                          {stage.id !== 'lead' && (
+                            <button
+                              onClick={() => moveStage(lead.id, 'prev')}
+                              className="p-1 rounded bg-dark-700 text-gray-400 hover:text-white text-[10px] flex items-center"
+                              title="Move back"
+                            >
+                              <ArrowLeft className="w-3 h-3" />
+                            </button>
+                          )}
+                          {stage.id !== 'won' && (
+                            <button
+                              onClick={() => moveStage(lead.id, 'next')}
+                              className="p-1 px-2.5 rounded bg-brand-500/20 text-brand-accent hover:bg-brand-500 hover:text-black font-bold text-[10px] flex items-center space-x-1 ml-auto"
+                            >
+                              <span>Advance</span>
+                              <ArrowRight className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Add Lead Modal */}
       {showAddModal && (
@@ -256,9 +327,10 @@ export default function LeadPipeline({ leads, setLeads }) {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-lg bg-brand-500 text-black font-extrabold hover:bg-brand-400"
+                  disabled={isSubmitting}
+                  className="px-5 py-2 rounded-lg bg-brand-500 text-black font-extrabold hover:bg-brand-400 disabled:opacity-50"
                 >
-                  Save Lead
+                  {isSubmitting ? 'Saving...' : 'Save Lead'}
                 </button>
               </div>
             </form>

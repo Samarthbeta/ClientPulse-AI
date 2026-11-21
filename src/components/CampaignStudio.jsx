@@ -8,16 +8,31 @@ import {
   MessageSquare, 
   Globe, 
   Video, 
-  ShieldAlert, 
-  Zap, 
-  Brain 
+  Brain, 
+  Loader2, 
+  AlertCircle, 
+  Settings,
+  RefreshCw
 } from 'lucide-react';
 import { COGNITIVE_BIASES } from '../data/cognitiveBiases';
+import { generatePersuasionCopy, getGeminiApiKey } from '../services/ai';
 
-export default function CampaignStudio({ selectedNiche }) {
-  const [activeFormat, setActiveFormat] = useState('email');
+export default function CampaignStudio({ selectedNiche, onOpenSettings }) {
+  const [activeChannel, setActiveChannel] = useState('email');
   const [selectedBiases, setSelectedBiases] = useState(['loss_aversion', 'system_blame', 'risk_reversal']);
-  const [copiedKey, setCopiedKey] = useState(null);
+  
+  // Custom prospect parameters for REAL AI generation
+  const [companyName, setCompanyName] = useState('');
+  const [customAudience, setCustomAudience] = useState(selectedNiche?.audience || '');
+  const [customPain, setCustomPain] = useState(selectedNiche?.painPoint || '');
+  const [customPrompt, setCustomPrompt] = useState('');
+
+  // AI state
+  const [generatedOutput, setGeneratedOutput] = useState('');
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [aiError, setAiError] = useState(null);
+
+  const [copied, setCopied] = useState(false);
 
   const toggleBias = (id) => {
     if (selectedBiases.includes(id)) {
@@ -29,106 +44,42 @@ export default function CampaignStudio({ selectedNiche }) {
     }
   };
 
-  const copyText = (text, key) => {
-    navigator.clipboard.writeText(text);
-    setCopiedKey(key);
-    setTimeout(() => setCopiedKey(null), 2000);
+  const handleGenerateAI = async () => {
+    setIsGenerating(true);
+    setAiError(null);
+
+    const hasKey = Boolean(getGeminiApiKey());
+    if (!hasKey) {
+      setIsGenerating(false);
+      setAiError('No Gemini API Key found. Click the settings button below to add your free Google AI Studio key.');
+      return;
+    }
+
+    try {
+      const result = await generatePersuasionCopy({
+        niche: selectedNiche?.name || 'General B2B',
+        audience: customAudience || selectedNiche?.audience || 'Decision Makers',
+        companyName: companyName.trim() || 'Target Company',
+        painPoint: customPain || selectedNiche?.painPoint || 'Manual bottlenecks and missed revenue',
+        channel: activeChannel,
+        biases: selectedBiases.map(b => COGNITIVE_BIASES.find(cb => cb.id === b)?.name).filter(Boolean),
+        customPrompt: customPrompt.trim()
+      });
+
+      setGeneratedOutput(result);
+    } catch (err) {
+      setAiError(err.message || 'Failed to generate copy. Please check your API key and connection.');
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
-  const nicheName = selectedNiche?.name || "Dental & Medical Clinics";
-  const audience = selectedNiche?.audience || "Clinic Owners & Doctors";
-  const pain = selectedNiche?.painPoint || "Staff turnover and receptionist missing after-hours patient calls";
-  const fear = selectedNiche?.fearTrigger || "Losing high-value implant patients to corporate dental chains";
-  const avgValue = selectedNiche?.metrics?.avgCustomerValue || 1500;
-
-  // Dynamically constructed copy based on selected niche and cognitive biases
-  const emailStep1 = `Subject: Quick question regarding your intake at {{Company_Name}}
-
-Hi {{First_Name}},
-
-I noticed {{Company_Name}} is doing incredible work in ${nicheName}.
-
-Here is the brutal truth in your industry right now:
-${pain}. 
-
-Data shows that whenever an inquiry goes unanswered for longer than 5 minutes, the probability of them booking drops by 391%. In your business, with an average client value of $${avgValue.toLocaleString()}, losing just 3 inquiries a week is quietly draining over $18,000 every single month.
-
-It's not your front desk's fault—traditional human intake stacks were never built for 24/7 consumer expectations.
-
-We built an automated 24/7 intake pipeline that qualifies and books appointments in under 90 seconds directly into your calendar.
-
-If we don't book you at least 10 qualified new clients in your first 30 days, you pay $0 and keep the system.
-
-Open to seeing a 2-minute video of how it looks?
-
-Best,
-Samarth (Aditya)
-Founder, ClientPulse AI`;
-
-  const emailStep2 = `Subject: The math behind the $${(avgValue * 4).toLocaleString()} leak at {{Company_Name}}
-
-Hi {{First_Name}},
-
-Following up on my note from Tuesday.
-
-Dr. Marcus at Apex had the exact same issue: ${fear}.
-
-Last month, they switched to our automated intake engine. Within 21 days:
-- Response time dropped from 3 hours to 45 seconds.
-- No-show rate decreased by 34%.
-- 18 high-value appointments booked with zero added payroll.
-
-We only take on 3 new practices per region to avoid competing in local markets.
-
-Do you have 5 minutes this Thursday at 2 PM to look over the numbers?
-
-Best,
-Samarth`;
-
-  const linkedinDM = `Hey {{First_Name}} — love what you're doing with {{Company_Name}}.
-
-Saw your recent updates. Quick question: are you guys struggling with ${pain} like most ${audience} right now?
-
-We just developed an automated workflow that solves ${fear} without hiring more staff or spending more on ads. 
-
-Put together a 3-minute personalized loom teardown of your current booking flow showing where leads are dropping off. Mind if I send the link over here?`;
-
-  const landingPageCopy = `# HERO SECTION
-HEADLINE:
-Stop Bleeding High-Value Clients to Fast Competitors.
-
-SUB-HEADLINE:
-The 24/7 Automated Intake & Client Acquisition System built exclusively for ${audience}. Turn missed inquiries into confirmed high-ticket bookings in under 90 seconds—guaranteed.
-
-PRIMARY CTA BUTTON:
-[ Claim Your Free Practice Leakage Audit → ]
-
----
-
-# THE PROBLEM (Loss Aversion & System-Blame)
-You didn't start your business to answer emails at 11 PM or watch your receptionist lose $3,000 inquiries to corporate competitors.
-
-The Problem Isn't You. It's The Outdated Stack:
-• 68% of inquiries arrive after-hours or on weekends.
-• Manual follow-up takes 4+ hours (prospects have already moved to competitor B).
-• Ads get clicks, but your calendar remains half-empty.
-
----
-
-# THE SOLUTION (The Grand Slam Offer)
-We install a complete done-for-you client acquisition pipeline into your business in under 14 days.
-✓ 24/7 Instant Qualification & Booking
-✓ Zero Payroll Burden (Automated)
-✓ 100% Risk Reversal: 15 Booked Clients or You Pay Nothing.`;
-
-  const vslScript = `[0:00 - 0:15 | The Pattern Interrupt & Fear Hook]
-"If you are running a business in ${nicheName}, there is a silent hemorrhage happening inside your operations right now that is costing you at least $15,000 every 30 days..."
-
-[0:15 - 0:35 | The Villain / System-Blame]
-"And the crazy part? It has nothing to do with your skill or your service quality. The truth is, the way consumers buy changed overnight, but 90% of practices are still using a 2018 manual intake stack..."
-
-[0:35 - 0:60 | The Risk-Free Emergency Exit]
-"In this short breakdown, I’m going to show you the 90-second automated system we install that books high-paying clients on autopilot. And if it doesn't add at least $10,000 in booked value in your first month, you don't pay a single cent. Click below to see the proof."`;
+  const copyToClipboard = () => {
+    if (!generatedOutput) return;
+    navigator.clipboard.writeText(generatedOutput);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   return (
     <div className="space-y-8 animate-fadeIn">
@@ -138,207 +89,215 @@ We install a complete done-for-you client acquisition pipeline into your busines
         <div>
           <div className="inline-flex items-center space-x-2 text-xs font-bold text-brand-accent uppercase tracking-wider mb-1">
             <Brain className="w-4 h-4" />
-            <span>MindFluence Persuasion Copy Studio</span>
+            <span>Real LLM Persuasion Engine</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-white">
-            Cognitive-Bias Outreach Generator
+            Dynamic Campaign Generator
           </h1>
           <p className="text-xs sm:text-sm text-gray-400 mt-1">
-            Generate psychologically validated campaigns tuned to <span className="text-brand-accent font-semibold">{nicheName}</span>.
+            Powered by Google Gemini 2.0 Flash + MindFluence Cognitive Bias Engineering.
           </p>
         </div>
-      </div>
-
-      {/* Cognitive Biases Toggle Bar */}
-      <div className="bg-dark-800 border border-dark-600 rounded-2xl p-5 glow-card">
-        <h3 className="text-xs font-extrabold uppercase tracking-wider text-gray-300 mb-3 flex items-center">
-          <Zap className="w-4 h-4 text-brand-accent mr-2" />
-          <span>Active Cognitive Bias Stack</span>
-        </h3>
-        <div className="flex flex-wrap gap-2">
-          {COGNITIVE_BIASES.map((bias) => {
-            const isSelected = selectedBiases.includes(bias.id);
-            return (
-              <button
-                key={bias.id}
-                onClick={() => toggleBias(bias.id)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                  isSelected
-                    ? 'bg-brand-500/20 text-brand-accent border border-brand-accent/40 shadow-sm shadow-brand-accent/20'
-                    : 'bg-dark-900 text-gray-400 border border-dark-600 hover:text-gray-200'
-                }`}
-              >
-                {bias.name}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Format Selector Tabs */}
-      <div className="flex flex-wrap gap-2 border-b border-dark-600 pb-3">
-        <button
-          onClick={() => setActiveFormat('email')}
-          className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-            activeFormat === 'email'
-              ? 'bg-brand-500 text-black shadow-md'
-              : 'bg-dark-800 text-gray-300 hover:bg-dark-700'
-          }`}
-        >
-          <Mail className="w-4 h-4" />
-          <span>Cold Email Drip (2-Step)</span>
-        </button>
 
         <button
-          onClick={() => setActiveFormat('linkedin')}
-          className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-            activeFormat === 'linkedin'
-              ? 'bg-brand-500 text-black shadow-md'
-              : 'bg-dark-800 text-gray-300 hover:bg-dark-700'
-          }`}
+          onClick={onOpenSettings}
+          className="flex items-center space-x-2 px-3 py-1.5 rounded-xl bg-dark-800 border border-dark-600 hover:border-gray-500 text-xs font-bold text-gray-300 self-start sm:self-auto transition-colors"
         >
-          <MessageSquare className="w-4 h-4" />
-          <span>LinkedIn DM Script</span>
-        </button>
-
-        <button
-          onClick={() => setActiveFormat('landing')}
-          className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-            activeFormat === 'landing'
-              ? 'bg-brand-500 text-black shadow-md'
-              : 'bg-dark-800 text-gray-300 hover:bg-dark-700'
-          }`}
-        >
-          <Globe className="w-4 h-4" />
-          <span>High-Converting Landing Page</span>
-        </button>
-
-        <button
-          onClick={() => setActiveFormat('vsl')}
-          className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-            activeFormat === 'vsl'
-              ? 'bg-brand-500 text-black shadow-md'
-              : 'bg-dark-800 text-gray-300 hover:bg-dark-700'
-          }`}
-        >
-          <Video className="w-4 h-4" />
-          <span>60-Sec VSL Script</span>
+          <Settings className="w-4 h-4 text-brand-accent" />
+          <span>Configure API Key</span>
         </button>
       </div>
 
-      {/* Content Display Panels */}
-      {activeFormat === 'email' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-dark-800 border border-dark-600 rounded-2xl p-6 glow-card flex flex-col justify-between">
+      {/* Main Grid: Parameters vs AI Output */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        {/* Left Form: Prospect & Campaign Inputs */}
+        <div className="lg:col-span-5 space-y-5 bg-dark-800 border border-dark-600 rounded-2xl p-6 glow-card">
+          <h3 className="text-sm font-bold text-white flex items-center">
+            <Sparkles className="w-4 h-4 text-brand-accent mr-2" />
+            <span>Target Prospect & Parameters</span>
+          </h3>
+
+          <div className="space-y-4 text-xs">
             <div>
-              <div className="flex items-center justify-between pb-3 border-b border-dark-600 mb-4">
-                <span className="text-xs font-bold text-brand-accent uppercase tracking-wider">
-                  Step 1: The Pain & Fear Hook
-                </span>
+              <label className="block font-bold text-gray-300 mb-1">Campaign Channel</label>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { id: 'email', name: 'Cold Email (2-Step)', icon: Mail },
+                  { id: 'linkedin', name: 'LinkedIn DM', icon: MessageSquare },
+                  { id: 'landing', name: 'Landing Page Copy', icon: Globe },
+                  { id: 'vsl', name: '60s Video Script', icon: Video },
+                ].map((item) => {
+                  const Icon = item.icon;
+                  const isSelected = activeChannel === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => setActiveChannel(item.id)}
+                      className={`flex items-center space-x-2 p-2.5 rounded-xl border text-left font-bold transition-all ${
+                        isSelected
+                          ? 'bg-brand-500/20 text-brand-accent border-brand-accent shadow-sm shadow-brand-accent/20'
+                          : 'bg-dark-900 border-dark-600 text-gray-400 hover:text-gray-200'
+                      }`}
+                    >
+                      <Icon className="w-3.5 h-3.5 shrink-0" />
+                      <span className="truncate">{item.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div>
+              <label className="block font-bold text-gray-300 mb-1">Target Company / Prospect Name</label>
+              <input
+                type="text"
+                value={companyName}
+                onChange={(e) => setCompanyName(e.target.value)}
+                placeholder="e.g. Apex Dental Care (or leave blank)"
+                className="w-full bg-dark-900 border border-dark-500 rounded-xl p-2.5 text-white outline-none focus:border-brand-accent"
+              />
+            </div>
+
+            <div>
+              <label className="block font-bold text-gray-300 mb-1">Target Decision Maker Audience</label>
+              <input
+                type="text"
+                value={customAudience}
+                onChange={(e) => setCustomAudience(e.target.value)}
+                placeholder="e.g. Clinic Owners, Managing Partners, VP of Sales"
+                className="w-full bg-dark-900 border border-dark-500 rounded-xl p-2.5 text-white outline-none focus:border-brand-accent"
+              />
+            </div>
+
+            <div>
+              <label className="block font-bold text-gray-300 mb-1">Specific Pain Point / Bleeding Leak</label>
+              <textarea
+                rows={2}
+                value={customPain}
+                onChange={(e) => setCustomPain(e.target.value)}
+                placeholder="e.g. After-hours inquiries go uncalled for 12 hours, losing $2,000 cases"
+                className="w-full bg-dark-900 border border-dark-500 rounded-xl p-2.5 text-white outline-none focus:border-brand-accent"
+              />
+            </div>
+
+            {/* Cognitive Bias Selector */}
+            <div>
+              <label className="block font-bold text-gray-300 mb-1.5">Cognitive Biases to Inject</label>
+              <div className="flex flex-wrap gap-1.5">
+                {COGNITIVE_BIASES.map((bias) => {
+                  const isSelected = selectedBiases.includes(bias.id);
+                  return (
+                    <button
+                      key={bias.id}
+                      type="button"
+                      onClick={() => toggleBias(bias.id)}
+                      className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all ${
+                        isSelected
+                          ? 'bg-brand-500/20 text-brand-accent border border-brand-accent/40'
+                          : 'bg-dark-900 text-gray-500 border border-dark-600 hover:text-gray-300'
+                      }`}
+                    >
+                      {bias.name.split('/')[0]}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div>
+              <label className="block font-bold text-gray-300 mb-1">Custom Prompt / Extra Context (Optional)</label>
+              <input
+                type="text"
+                value={customPrompt}
+                onChange={(e) => setCustomPrompt(e.target.value)}
+                placeholder="e.g. Mention that we offer a 14-day free pilot"
+                className="w-full bg-dark-900 border border-dark-500 rounded-xl p-2.5 text-white outline-none focus:border-brand-accent"
+              />
+            </div>
+
+            {/* Generate Button */}
+            <button
+              onClick={handleGenerateAI}
+              disabled={isGenerating}
+              className="w-full py-3 rounded-xl bg-gradient-to-r from-brand-500 to-brand-accent text-black font-extrabold text-xs uppercase tracking-wider hover:opacity-95 transition-all shadow-lg shadow-brand-500/20 active:scale-95 disabled:opacity-50 flex items-center justify-center space-x-2"
+            >
+              {isGenerating ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Generating with Gemini AI...</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-4 h-4 stroke-[2.5]" />
+                  <span>Generate Real AI Campaign</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* Right Output: Real Generated AI Copy */}
+        <div className="lg:col-span-7 bg-dark-800 border border-dark-600 rounded-2xl p-6 glow-card flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between pb-4 border-b border-dark-600 mb-4">
+              <span className="text-xs font-bold text-brand-accent uppercase tracking-wider flex items-center">
+                <Brain className="w-4 h-4 mr-1.5" />
+                <span>AI Generated Output</span>
+              </span>
+
+              {generatedOutput && (
                 <button
-                  onClick={() => copyText(emailStep1, 'email1')}
-                  className="flex items-center space-x-1 px-2.5 py-1 rounded bg-dark-700 text-xs text-gray-200 hover:text-white"
+                  onClick={copyToClipboard}
+                  className="flex items-center space-x-1 px-3 py-1.5 rounded-lg bg-dark-700 hover:bg-dark-600 text-xs text-gray-200"
                 >
-                  {copiedKey === 'email1' ? <Check className="w-3.5 h-3.5 text-brand-accent" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{copiedKey === 'email1' ? 'Copied' : 'Copy'}</span>
+                  {copied ? <Check className="w-3.5 h-3.5 text-brand-accent" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copied ? 'Copied' : 'Copy Text'}</span>
+                </button>
+              )}
+            </div>
+
+            {/* Error Notification */}
+            {aiError && (
+              <div className="mb-4 p-4 rounded-xl bg-red-950/40 border border-red-800/50 text-red-300 text-xs space-y-2">
+                <div className="flex items-start space-x-2">
+                  <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                  <span>{aiError}</span>
+                </div>
+                <button
+                  onClick={onOpenSettings}
+                  className="inline-flex items-center space-x-1.5 px-3 py-1 rounded bg-dark-900 border border-red-700/60 text-white font-bold text-[11px]"
+                >
+                  <Settings className="w-3.5 h-3.5 text-brand-accent" />
+                  <span>Open Settings to Add Gemini API Key</span>
                 </button>
               </div>
-              <pre className="text-xs font-mono text-gray-200 whitespace-pre-wrap leading-relaxed bg-dark-900 p-4 rounded-xl border border-dark-700">
-                {emailStep1}
-              </pre>
-            </div>
-            <div className="mt-4 p-3 bg-brand-500/5 rounded-xl border border-brand-accent/20 text-[11px] text-gray-300">
-              💡 <strong>Psychology Note:</strong> Uses <em>Loss Aversion</em> to expose the $18k leak, then applies <em>System-Blame</em> to eliminate defensiveness, ending with <em>Complete Risk Reversal</em>.
-            </div>
-          </div>
+            )}
 
-          <div className="bg-dark-800 border border-dark-600 rounded-2xl p-6 glow-card flex flex-col justify-between">
-            <div>
-              <div className="flex items-center justify-between pb-3 border-b border-dark-600 mb-4">
-                <span className="text-xs font-bold text-brand-accent uppercase tracking-wider">
-                  Step 2: Social Proof & Scarcity Follow-Up
-                </span>
-                <button
-                  onClick={() => copyText(emailStep2, 'email2')}
-                  className="flex items-center space-x-1 px-2.5 py-1 rounded bg-dark-700 text-xs text-gray-200 hover:text-white"
-                >
-                  {copiedKey === 'email2' ? <Check className="w-3.5 h-3.5 text-brand-accent" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{copiedKey === 'email2' ? 'Copied' : 'Copy'}</span>
-                </button>
+            {/* Generated Text Area */}
+            {generatedOutput ? (
+              <div className="bg-dark-900 border border-dark-700 rounded-xl p-5 text-xs text-gray-200 font-mono whitespace-pre-wrap leading-relaxed max-h-[550px] overflow-y-auto">
+                {generatedOutput}
               </div>
-              <pre className="text-xs font-mono text-gray-200 whitespace-pre-wrap leading-relaxed bg-dark-900 p-4 rounded-xl border border-dark-700">
-                {emailStep2}
-              </pre>
-            </div>
-            <div className="mt-4 p-3 bg-brand-500/5 rounded-xl border border-brand-accent/20 text-[11px] text-gray-300">
-              💡 <strong>Psychology Note:</strong> Applies <em>Social Proof</em> through concrete case study stats and triggers urgency via <em>Real Scarcity</em> (limiting 3 per market).
-            </div>
+            ) : (
+              <div className="h-72 rounded-xl border border-dashed border-dark-600 flex flex-col items-center justify-center p-6 text-center text-gray-500">
+                <Brain className="w-10 h-10 text-dark-500 mb-3" />
+                <p className="text-xs font-semibold text-gray-400">No output generated yet.</p>
+                <p className="text-[11px] text-gray-500 mt-1 max-w-sm">
+                  Fill in your target prospect details on the left and click "Generate Real AI Campaign" to call the live Gemini LLM API.
+                </p>
+              </div>
+            )}
           </div>
-        </div>
-      )}
 
-      {activeFormat === 'linkedin' && (
-        <div className="bg-dark-800 border border-dark-600 rounded-2xl p-6 glow-card">
-          <div className="flex items-center justify-between pb-3 border-b border-dark-600 mb-4">
-            <span className="text-xs font-bold text-brand-accent uppercase tracking-wider">
-              High-Converting Inbound LinkedIn DM Script
-            </span>
-            <button
-              onClick={() => copyText(linkedinDM, 'linkedin')}
-              className="flex items-center space-x-1 px-2.5 py-1 rounded bg-dark-700 text-xs text-gray-200 hover:text-white"
-            >
-              {copiedKey === 'linkedin' ? <Check className="w-3.5 h-3.5 text-brand-accent" /> : <Copy className="w-3.5 h-3.5" />}
-              <span>{copiedKey === 'linkedin' ? 'Copied' : 'Copy'}</span>
-            </button>
-          </div>
-          <pre className="text-xs font-mono text-gray-200 whitespace-pre-wrap leading-relaxed bg-dark-900 p-4 rounded-xl border border-dark-700">
-            {linkedinDM}
-          </pre>
-          <div className="mt-4 p-3 bg-brand-500/5 rounded-xl border border-brand-accent/20 text-[11px] text-gray-300">
-            💡 <strong>Why this works:</strong> Instead of pitching in the first message, it offers a high-value customized audit (<em>Endowment Effect</em>) and asks permission to share.
+          <div className="mt-4 pt-3 border-t border-dark-700/60 flex items-center justify-between text-[11px] text-gray-400">
+            <span>Model: <strong className="text-gray-200">Google Gemini 2.0 Flash</strong></span>
+            <span>Zero hardcoded templates • Dynamic LLM Inference</span>
           </div>
         </div>
-      )}
 
-      {activeFormat === 'landing' && (
-        <div className="bg-dark-800 border border-dark-600 rounded-2xl p-6 glow-card">
-          <div className="flex items-center justify-between pb-3 border-b border-dark-600 mb-4">
-            <span className="text-xs font-bold text-brand-accent uppercase tracking-wider">
-              Full Landing Page Copy Blueprint
-            </span>
-            <button
-              onClick={() => copyText(landingPageCopy, 'landing')}
-              className="flex items-center space-x-1 px-2.5 py-1 rounded bg-dark-700 text-xs text-gray-200 hover:text-white"
-            >
-              {copiedKey === 'landing' ? <Check className="w-3.5 h-3.5 text-brand-accent" /> : <Copy className="w-3.5 h-3.5" />}
-              <span>{copiedKey === 'landing' ? 'Copied' : 'Copy'}</span>
-            </button>
-          </div>
-          <pre className="text-xs font-mono text-gray-200 whitespace-pre-wrap leading-relaxed bg-dark-900 p-4 rounded-xl border border-dark-700">
-            {landingPageCopy}
-          </pre>
-        </div>
-      )}
-
-      {activeFormat === 'vsl' && (
-        <div className="bg-dark-800 border border-dark-600 rounded-2xl p-6 glow-card">
-          <div className="flex items-center justify-between pb-3 border-b border-dark-600 mb-4">
-            <span className="text-xs font-bold text-brand-accent uppercase tracking-wider">
-              60-Second Video Sales Letter (VSL) Hook Script
-            </span>
-            <button
-              onClick={() => copyText(vslScript, 'vsl')}
-              className="flex items-center space-x-1 px-2.5 py-1 rounded bg-dark-700 text-xs text-gray-200 hover:text-white"
-            >
-              {copiedKey === 'vsl' ? <Check className="w-3.5 h-3.5 text-brand-accent" /> : <Copy className="w-3.5 h-3.5" />}
-              <span>{copiedKey === 'vsl' ? 'Copied' : 'Copy'}</span>
-            </button>
-          </div>
-          <pre className="text-xs font-mono text-gray-200 whitespace-pre-wrap leading-relaxed bg-dark-900 p-4 rounded-xl border border-dark-700">
-            {vslScript}
-          </pre>
-        </div>
-      )}
+      </div>
 
     </div>
   );
